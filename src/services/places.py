@@ -38,13 +38,7 @@ class PlacesService:
 
     async def list_places(self, user_id: UUID) -> list[tuple[Place, PlaceRole]]:
         async with self.uow:
-            members = await self.uow.place_member_repository.get_all(user_id=user_id)
-            result: list[tuple[Place, PlaceRole]] = []
-            for member in members:
-                place = await self.uow.place_repository.get_by_id(member.place_id)
-                if place:
-                    result.append((place, member.role))
-            return result
+            return await self.uow.place_member_repository.list_places_with_roles(user_id)
 
     async def update_place(self, user_id: UUID, place_id: UUID, name: str, description: str) -> str:
         async with self.uow:
@@ -59,10 +53,8 @@ class PlacesService:
             member = await self._get_member_or_fail(user_id, place_id)
             if member.role != PlaceRole.OWNER:
                 raise PermissionError("Only owner can delete a place")
-            # Delete all members first
-            members = await self.uow.place_member_repository.get_all(place_id=place_id)
-            for m in members:
-                await self.uow.place_member_repository.delete(m)
+            # Delete all members atomically
+            await self.uow.place_member_repository.delete_all_by_place(place_id)
             place = await self.uow.place_repository.get_by_id(place_id)
             if not place:
                 raise ValueError("Place not found")
