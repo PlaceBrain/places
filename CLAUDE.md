@@ -1,10 +1,10 @@
 # Places Service
 
-- **Порт:** 50052
-- **БД:** places_db (PostgreSQL)
-- Нет зависимостей от других gRPC-сервисов (вызывается другими)
+- **Port:** 50052
+- **DB:** places_db (PostgreSQL)
+- No dependencies on other gRPC services (called by others)
 
-## Структура
+## Structure
 
 ```
 src/
@@ -25,25 +25,25 @@ src/
 └── infra/db/
     ├── helper.py                    # SQLAlchemy async engine + session factory
     ├── uow.py                       # UnitOfWork (AsyncContextManager)
-    ├── models/                      # Place, PlaceMember (с PlaceRole enum)
+    ├── models/                      # Place, PlaceMember (with PlaceRole enum)
     └── repositories/                # BaseRepository[T], PlaceRepository, PlaceMemberRepository
 ```
 
-## Роли
+## Roles
 
-- OWNER, ADMIN, VIEWER (PlaceRole StrEnum в models)
-- Proto-маппинг через именованные константы `ROLE_OWNER`, `ROLE_ADMIN`, `ROLE_VIEWER` из `placebrain_contracts`
+- OWNER, ADMIN, VIEWER (PlaceRole StrEnum in models)
+- Proto mapping via named constants `ROLE_OWNER`, `ROLE_ADMIN`, `ROLE_VIEWER` from `placebrain_contracts`
 
-## Protobuf-импорты
+## Protobuf Imports
 
 ```python
 from placebrain_contracts import places_pb2 as places_pb
 from placebrain_contracts.places_pb2 import ROLE_OWNER, ROLE_ADMIN, ROLE_VIEWER
 ```
 
-## Обработка ошибок
+## Error Handling
 
-Типизированные исключения из `core/exceptions.py`:
+Typed exceptions from `core/exceptions.py`:
 
 | Exception             | gRPC StatusCode      |
 |-----------------------|----------------------|
@@ -53,8 +53,8 @@ from placebrain_contracts.places_pb2 import ROLE_OWNER, ROLE_ADMIN, ROLE_VIEWER
 
 ## UnitOfWork
 
-Управляется через DI teardown (yield-based). Сервисы работают с репозиториями напрямую без `async with self.uow:`.
+Managed via DI teardown (yield-based). Services work with repositories directly without `async with self.uow:`.
 
 ## DTO
 
-Сервисы возвращают DTO из `core/dto.py`, не ORM-модели.
+Services return DTOs from `core/dto.py`, not ORM models.
