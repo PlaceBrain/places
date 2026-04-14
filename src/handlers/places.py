@@ -4,115 +4,90 @@ from uuid import UUID
 import grpc
 from dishka import FromDishka
 from dishka.integrations.grpcio import inject
-from placebrain_contracts.places_pb2 import (
-    AddMemberRequest,
-    AddMemberResponse,
-    CreatePlaceRequest,
-    CreatePlaceResponse,
-    DeletePlaceRequest,
-    DeletePlaceResponse,
-    GetPlaceRequest,
-    GetPlaceResponse,
-    ListMembersRequest,
-    ListMembersResponse,
-    ListPlacesRequest,
-    ListPlacesResponse,
-    MemberInfo,
-    PlaceSummary,
-    RemoveMemberRequest,
-    RemoveMemberResponse,
-    UpdateMemberRoleRequest,
-    UpdateMemberRoleResponse,
-    UpdatePlaceRequest,
-    UpdatePlaceResponse,
-)
+from placebrain_contracts import places_pb2 as places_pb
+from placebrain_contracts.places_pb2 import ROLE_ADMIN, ROLE_OWNER, ROLE_VIEWER
 from placebrain_contracts.places_pb2_grpc import PlacesServiceServicer
 
+from src.core.exceptions import AlreadyExistsError, NotFoundError, PermissionDeniedError
 from src.infra.db.models.place_member import PlaceRole
 from src.services.places import PlacesService
 
 logger = logging.getLogger(__name__)
 
 _ROLE_TO_PROTO = {
-    PlaceRole.OWNER: 1,
-    PlaceRole.ADMIN: 2,
-    PlaceRole.VIEWER: 3,
+    PlaceRole.OWNER: ROLE_OWNER,
+    PlaceRole.ADMIN: ROLE_ADMIN,
+    PlaceRole.VIEWER: ROLE_VIEWER,
 }
 
-_PROTO_TO_ROLE = {
-    1: PlaceRole.OWNER,
-    2: PlaceRole.ADMIN,
-    3: PlaceRole.VIEWER,
-}
+_PROTO_TO_ROLE = {v: k for k, v in _ROLE_TO_PROTO.items()}
 
 
 class PlacesHandler(PlacesServiceServicer):
     @inject
     async def CreatePlace(  # type: ignore[override]
         self,
-        request: CreatePlaceRequest,
+        request: places_pb.CreatePlaceRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> CreatePlaceResponse:
+    ) -> places_pb.CreatePlaceResponse:
         logger.info("CreatePlace called by user: %s", request.user_id)
         place_id = await places_service.create_place(
             UUID(request.user_id), request.name, request.description
         )
-        return CreatePlaceResponse(place_id=place_id)
+        return places_pb.CreatePlaceResponse(place_id=place_id)
 
     @inject
     async def GetPlace(  # type: ignore[override]
         self,
-        request: GetPlaceRequest,
+        request: places_pb.GetPlaceRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> GetPlaceResponse:
+    ) -> places_pb.GetPlaceResponse:
         logger.info("GetPlace called for place: %s", request.place_id)
         try:
-            place, role = await places_service.get_place(
-                UUID(request.user_id), UUID(request.place_id)
-            )
-            return GetPlaceResponse(
+            place = await places_service.get_place(UUID(request.user_id), UUID(request.place_id))
+            return places_pb.GetPlaceResponse(
                 place_id=str(place.id),
                 name=place.name,
                 description=place.description,
-                user_role=_ROLE_TO_PROTO[role],
+                user_role=_ROLE_TO_PROTO[place.role],
             )
-        except PermissionError as e:
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except NotFoundError as e:
             await context.abort(grpc.StatusCode.NOT_FOUND, str(e))
             raise
 
     @inject
     async def ListPlaces(  # type: ignore[override]
         self,
-        request: ListPlacesRequest,
+        request: places_pb.ListPlacesRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> ListPlacesResponse:
+    ) -> places_pb.ListPlacesResponse:
         logger.info("ListPlaces called by user: %s", request.user_id)
         places = await places_service.list_places(UUID(request.user_id))
-        return ListPlacesResponse(
+        return places_pb.ListPlacesResponse(
             places=[
-                PlaceSummary(
-                    place_id=str(place.id),
-                    name=place.name,
-                    description=place.description,
-                    user_role=_ROLE_TO_PROTO[role],
+                places_pb.PlaceSummary(
+                    place_id=str(p.id),
+                    name=p.name,
+                    description=p.description,
+                    user_role=_ROLE_TO_PROTO[p.role],
                 )
-                for place, role in places
+                for p in places
             ]
         )
 
     @inject
     async def UpdatePlace(  # type: ignore[override]
         self,
-        request: UpdatePlaceRequest,
+        request: places_pb.UpdatePlaceRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> UpdatePlaceResponse:
+    ) -> places_pb.UpdatePlaceResponse:
         logger.info("UpdatePlace called for place: %s", request.place_id)
         try:
             place_id = await places_service.update_place(
@@ -121,41 +96,41 @@ class PlacesHandler(PlacesServiceServicer):
                 request.name,
                 request.description,
             )
-            return UpdatePlaceResponse(place_id=place_id)
-        except PermissionError as e:
+            return places_pb.UpdatePlaceResponse(place_id=place_id)
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except NotFoundError as e:
             await context.abort(grpc.StatusCode.NOT_FOUND, str(e))
             raise
 
     @inject
     async def DeletePlace(  # type: ignore[override]
         self,
-        request: DeletePlaceRequest,
+        request: places_pb.DeletePlaceRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> DeletePlaceResponse:
+    ) -> places_pb.DeletePlaceResponse:
         logger.info("DeletePlace called for place: %s", request.place_id)
         try:
             success = await places_service.delete_place(
                 UUID(request.user_id), UUID(request.place_id)
             )
-            return DeletePlaceResponse(success=success)
-        except PermissionError as e:
+            return places_pb.DeletePlaceResponse(success=success)
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except NotFoundError as e:
             await context.abort(grpc.StatusCode.NOT_FOUND, str(e))
             raise
 
     @inject
     async def AddMember(  # type: ignore[override]
         self,
-        request: AddMemberRequest,
+        request: places_pb.AddMemberRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> AddMemberResponse:
+    ) -> places_pb.AddMemberResponse:
         logger.info("AddMember called for place: %s", request.place_id)
         try:
             role = _PROTO_TO_ROLE.get(request.role)
@@ -168,21 +143,21 @@ class PlacesHandler(PlacesServiceServicer):
                 UUID(request.target_user_id),
                 role,
             )
-            return AddMemberResponse(success=success)
-        except PermissionError as e:
+            return places_pb.AddMemberResponse(success=success)
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except AlreadyExistsError as e:
             await context.abort(grpc.StatusCode.ALREADY_EXISTS, str(e))
             raise
 
     @inject
     async def RemoveMember(  # type: ignore[override]
         self,
-        request: RemoveMemberRequest,
+        request: places_pb.RemoveMemberRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> RemoveMemberResponse:
+    ) -> places_pb.RemoveMemberResponse:
         logger.info("RemoveMember called for place: %s", request.place_id)
         try:
             success = await places_service.remove_member(
@@ -190,21 +165,21 @@ class PlacesHandler(PlacesServiceServicer):
                 UUID(request.place_id),
                 UUID(request.target_user_id),
             )
-            return RemoveMemberResponse(success=success)
-        except PermissionError as e:
+            return places_pb.RemoveMemberResponse(success=success)
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except NotFoundError as e:
             await context.abort(grpc.StatusCode.NOT_FOUND, str(e))
             raise
 
     @inject
     async def UpdateMemberRole(  # type: ignore[override]
         self,
-        request: UpdateMemberRoleRequest,
+        request: places_pb.UpdateMemberRoleRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> UpdateMemberRoleResponse:
+    ) -> places_pb.UpdateMemberRoleResponse:
         logger.info("UpdateMemberRole called for place: %s", request.place_id)
         try:
             role = _PROTO_TO_ROLE.get(request.role)
@@ -217,35 +192,35 @@ class PlacesHandler(PlacesServiceServicer):
                 UUID(request.target_user_id),
                 role,
             )
-            return UpdateMemberRoleResponse(success=success)
-        except PermissionError as e:
+            return places_pb.UpdateMemberRoleResponse(success=success)
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
-        except ValueError as e:
+        except NotFoundError as e:
             await context.abort(grpc.StatusCode.NOT_FOUND, str(e))
             raise
 
     @inject
     async def ListMembers(  # type: ignore[override]
         self,
-        request: ListMembersRequest,
+        request: places_pb.ListMembersRequest,
         context: grpc.aio.ServicerContext,
         places_service: FromDishka[PlacesService],
-    ) -> ListMembersResponse:
+    ) -> places_pb.ListMembersResponse:
         logger.info("ListMembers called for place: %s", request.place_id)
         try:
             members = await places_service.list_members(
                 UUID(request.user_id), UUID(request.place_id)
             )
-            return ListMembersResponse(
+            return places_pb.ListMembersResponse(
                 members=[
-                    MemberInfo(
+                    places_pb.MemberInfo(
                         user_id=str(m.user_id),
                         role=_ROLE_TO_PROTO[m.role],
                     )
                     for m in members
                 ]
             )
-        except PermissionError as e:
+        except PermissionDeniedError as e:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, str(e))
             raise
