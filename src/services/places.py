@@ -87,10 +87,6 @@ class PlacesService:
             },
             key=str(place_id),
         )
-        for member_id in member_ids:
-            await self.broker.publish(
-                None, topic=PLACES_EVENTS_TOPIC, key=f"{place_id}:{member_id}".encode()
-            )
         return True
 
     async def add_member(
@@ -136,8 +132,13 @@ class PlacesService:
         if member_role == PlaceRole.ADMIN and target.role != PlaceRole.VIEWER:
             raise PermissionDeniedError("Admin can only remove viewers")
         await self.uow.place_member_repository.delete(target)
-        await self.broker.publish(
-            None, topic=PLACES_EVENTS_TOPIC, key=f"{place_id}:{target_user_id}".encode()
+        await self._publish_event(
+            {
+                "event_type": "member.removed",
+                "place_id": str(place_id),
+                "user_id": str(target_user_id),
+            },
+            key=f"{place_id}:{target_user_id}",
         )
         return True
 
