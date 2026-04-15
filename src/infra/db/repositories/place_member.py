@@ -16,7 +16,9 @@ class PlaceMemberRepository(BaseRepository[PlaceMember]):
 
     async def delete_all_by_place(self, place_id: UUID) -> Sequence[UUID]:
         result = await self.session.execute(
-            delete(PlaceMember).where(PlaceMember.place_id == place_id).returning(PlaceMember.id)
+            delete(PlaceMember)
+            .where(PlaceMember.place_id == place_id)
+            .returning(PlaceMember.user_id)
         )
         await self.session.flush()
         return result.scalars().all()

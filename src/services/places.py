@@ -2,6 +2,13 @@ import logging
 from uuid import UUID
 
 from faststream.kafka import KafkaBroker
+from placebrain_contracts.events import (
+    BaseEvent,
+    MemberAdded,
+    MemberRemoved,
+    MemberRoleChanged,
+    PlaceDeleted,
+)
 
 from src.core.dto import PlaceMemberDTO, PlaceWithRoleDTO
 from src.core.exceptions import AlreadyExistsError, NotFoundError, PermissionDeniedError
@@ -18,8 +25,10 @@ class PlacesService:
         self.uow = uow
         self.broker = broker
 
-    async def _publish_event(self, event: dict, key: str) -> None:
-        await self.broker.publish(event, topic=PLACES_EVENTS_TOPIC, key=key.encode())
+    async def _publish_event(self, event: BaseEvent, key: str) -> None:
+        await self.broker.publish(
+            event.model_dump(mode="json"), topic=PLACES_EVENTS_TOPIC, key=key.encode()
+        )
 
     async def _get_member_or_fail(self, user_id: UUID, place_id: UUID) -> PlaceRole:
         member = await self.uow.place_member_repository.get_one_or_none(
@@ -35,12 +44,7 @@ class PlacesService:
             place_id=place.id, user_id=user_id, role=PlaceRole.OWNER
         )
         await self._publish_event(
-            {
-                "event_type": "member.added",
-                "place_id": str(place.id),
-                "user_id": str(user_id),
-                "role": PlaceRole.OWNER.value,
-            },
+            MemberAdded(place_id=place.id, user_id=user_id, role=PlaceRole.OWNER.value),
             key=f"{place.id}:{user_id}",
         )
         return str(place.id)
@@ -72,19 +76,13 @@ class PlacesService:
         role = await self._get_member_or_fail(user_id, place_id)
         if role != PlaceRole.OWNER:
             raise PermissionDeniedError("Only owner can delete a place")
-        members = await self.uow.place_member_repository.get_all(place_id=place_id)
-        member_ids = [m.user_id for m in members]
-        await self.uow.place_member_repository.delete_all_by_place(place_id)
+        member_ids = await self.uow.place_member_repository.delete_all_by_place(place_id)
         place = await self.uow.place_repository.get_by_id(place_id)
         if not place:
             raise NotFoundError("Place not found")
         await self.uow.place_repository.delete(place)
         await self._publish_event(
-            {
-                "event_type": "place.deleted",
-                "place_id": str(place_id),
-                "member_ids": [str(m) for m in member_ids],
-            },
+            PlaceDeleted(place_id=place_id, member_ids=list(member_ids)),
             key=str(place_id),
         )
         return True
@@ -108,12 +106,7 @@ class PlacesService:
             place_id=place_id, user_id=target_user_id, role=role
         )
         await self._publish_event(
-            {
-                "event_type": "member.added",
-                "place_id": str(place_id),
-                "user_id": str(target_user_id),
-                "role": role.value,
-            },
+            MemberAdded(place_id=place_id, user_id=target_user_id, role=role.value),
             key=f"{place_id}:{target_user_id}",
         )
         return True
@@ -133,11 +126,7 @@ class PlacesService:
             raise PermissionDeniedError("Admin can only remove viewers")
         await self.uow.place_member_repository.delete(target)
         await self._publish_event(
-            {
-                "event_type": "member.removed",
-                "place_id": str(place_id),
-                "user_id": str(target_user_id),
-            },
+            MemberRemoved(place_id=place_id, user_id=target_user_id),
             key=f"{place_id}:{target_user_id}",
         )
         return True
@@ -159,12 +148,7 @@ class PlacesService:
             raise PermissionDeniedError("Cannot change the owner's role")
         await self.uow.place_member_repository.update(target.id, role=role)
         await self._publish_event(
-            {
-                "event_type": "member.role_changed",
-                "place_id": str(place_id),
-                "user_id": str(target_user_id),
-                "role": role.value,
-            },
+            MemberRoleChanged(place_id=place_id, user_id=target_user_id, role=role.value),
             key=f"{place_id}:{target_user_id}",
         )
         return True
