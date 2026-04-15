@@ -2,13 +2,14 @@
 
 - **Port:** 50052
 - **DB:** places_db (PostgreSQL)
+- **Kafka:** producer — publishes member/place events to `places.events` topic
 - No dependencies on other gRPC services (called by others)
 
 ## Structure
 
 ```
 src/
-├── main.py                          # gRPC server, DI container (Dishka)
+├── main.py                          # gRPC server + Kafka broker, DI container (Dishka)
 ├── core/
 │   ├── config.py                    # Pydantic Settings
 │   ├── dto.py                       # PlaceDTO, PlaceMemberDTO, PlaceWithRoleDTO
@@ -17,11 +18,12 @@ src/
 ├── dependencies/
 │   ├── config.py                    # Settings (APP scope)
 │   ├── db.py                        # DatabaseHelper (APP), UoW (REQUEST, yield-based)
+│   ├── kafka.py                     # KafkaBroker (APP scope)
 │   └── places.py                    # PlacesService (REQUEST)
 ├── handlers/
 │   └── places.py                    # gRPC PlacesHandler
 ├── services/
-│   └── places.py                    # CRUD places + member management
+│   └── places.py                    # CRUD places + member management + event publishing
 └── infra/db/
     ├── helper.py                    # SQLAlchemy async engine + session factory
     ├── uow.py                       # UnitOfWork (AsyncContextManager)
@@ -58,3 +60,19 @@ Managed via DI teardown (yield-based). Services work with repositories directly 
 ## DTO
 
 Services return DTOs from `core/dto.py`, not ORM models.
+
+## Kafka Events (Producer)
+
+Topic: `places.events`. All events use Pydantic models from `placebrain_contracts.events`.
+
+| Action | Event Model | Consumers |
+|--------|-------------|-----------|
+| Create place (auto-add owner) | `MemberAdded` | devices |
+| Add member | `MemberAdded` | devices |
+| Remove member | `MemberRemoved` | devices |
+| Change member role | `MemberRoleChanged` | devices |
+| Delete place | `PlaceDeleted` | devices |
+
+Publishing via `PlacesService._publish_event(event: BaseEvent, key: str)`.
+
+**StrEnum → Literal:** `PlaceRole.value` returns `str`, but event models expect `Literal[...]`. Use `# type: ignore[arg-type]` on these lines — values are guaranteed to match.
