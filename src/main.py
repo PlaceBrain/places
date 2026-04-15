@@ -9,6 +9,7 @@ from placebrain_contracts.places_pb2_grpc import add_PlacesServiceServicer_to_se
 from src.core.config import Settings
 from src.dependencies.config import ConfigProvider
 from src.dependencies.db import DBProvider
+from src.dependencies.kafka import KafkaProvider
 from src.dependencies.places import PlacesProvider
 from src.handlers.places import PlacesHandler
 
@@ -19,6 +20,7 @@ async def serve() -> None:
     container = make_async_container(
         ConfigProvider(),
         DBProvider(),
+        KafkaProvider(),
         PlacesProvider(),
     )
     settings = await container.get(Settings)

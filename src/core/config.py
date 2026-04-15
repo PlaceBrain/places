@@ -43,10 +43,15 @@ class PostgresConfig(BaseModel):
     pool_timeout: int = Field(default=30)
 
 
+class KafkaConfig(BaseModel):
+    url: str = Field(default="placebrain-kafka:19092")
+
+
 class Settings(BaseSettings):
     app: AppSettings = Field(default=...)
     logging: LoggingConfig = Field(default=...)
     database: PostgresConfig = Field(default=...)
+    kafka: KafkaConfig = Field(default_factory=KafkaConfig)
 
     class Config:
         env_file = BASE_DIR / ".env"
