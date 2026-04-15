@@ -106,7 +106,7 @@ class PlacesService:
             place_id=place_id, user_id=target_user_id, role=role
         )
         await self._publish_event(
-            MemberAdded(place_id=place_id, user_id=target_user_id, role=role.value),
+            MemberAdded(place_id=place_id, user_id=target_user_id, role=role.value),  # type: ignore[arg-type]
             key=f"{place_id}:{target_user_id}",
         )
         return True
@@ -148,7 +148,7 @@ class PlacesService:
             raise PermissionDeniedError("Cannot change the owner's role")
         await self.uow.place_member_repository.update(target.id, role=role)
         await self._publish_event(
-            MemberRoleChanged(place_id=place_id, user_id=target_user_id, role=role.value),
+            MemberRoleChanged(place_id=place_id, user_id=target_user_id, role=role.value),  # type: ignore[arg-type]
             key=f"{place_id}:{target_user_id}",
         )
         return True
