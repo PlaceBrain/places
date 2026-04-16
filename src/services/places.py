@@ -3,7 +3,10 @@ from uuid import UUID
 
 from faststream.kafka import KafkaBroker
 from placebrain_contracts.events import (
-    BaseEvent,
+    TOPIC_MEMBER_ADDED,
+    TOPIC_MEMBER_REMOVED,
+    TOPIC_MEMBER_ROLE_CHANGED,
+    TOPIC_PLACE_DELETED,
     MemberAdded,
     MemberRemoved,
     MemberRoleChanged,
@@ -17,18 +20,11 @@ from src.infra.db.uow import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
-PLACES_EVENTS_TOPIC = "places.events"
-
 
 class PlacesService:
     def __init__(self, uow: UnitOfWork, broker: KafkaBroker) -> None:
         self.uow = uow
         self.broker = broker
-
-    async def _publish_event(self, event: BaseEvent, key: str) -> None:
-        await self.broker.publish(
-            event.model_dump(mode="json"), topic=PLACES_EVENTS_TOPIC, key=key.encode()
-        )
 
     async def _get_member_or_fail(self, user_id: UUID, place_id: UUID) -> PlaceRole:
         member = await self.uow.place_member_repository.get_one_or_none(
@@ -43,9 +39,10 @@ class PlacesService:
         await self.uow.place_member_repository.create(
             place_id=place.id, user_id=user_id, role=PlaceRole.OWNER
         )
-        await self._publish_event(
+        await self.broker.publish(
             MemberAdded(place_id=place.id, user_id=user_id, role=PlaceRole.OWNER.value),
-            key=f"{place.id}:{user_id}",
+            topic=TOPIC_MEMBER_ADDED,
+            key=f"{place.id}:{user_id}".encode(),
         )
         return str(place.id)
 
@@ -81,9 +78,10 @@ class PlacesService:
         if not place:
             raise NotFoundError("Place not found")
         await self.uow.place_repository.delete(place)
-        await self._publish_event(
+        await self.broker.publish(
             PlaceDeleted(place_id=place_id, member_ids=list(member_ids)),
-            key=str(place_id),
+            topic=TOPIC_PLACE_DELETED,
+            key=str(place_id).encode(),
         )
         return True
 
@@ -105,9 +103,10 @@ class PlacesService:
         await self.uow.place_member_repository.create(
             place_id=place_id, user_id=target_user_id, role=role
         )
-        await self._publish_event(
+        await self.broker.publish(
             MemberAdded(place_id=place_id, user_id=target_user_id, role=role.value),  # type: ignore[arg-type]
-            key=f"{place_id}:{target_user_id}",
+            topic=TOPIC_MEMBER_ADDED,
+            key=f"{place_id}:{target_user_id}".encode(),
         )
         return True
 
@@ -125,9 +124,10 @@ class PlacesService:
         if member_role == PlaceRole.ADMIN and target.role != PlaceRole.VIEWER:
             raise PermissionDeniedError("Admin can only remove viewers")
         await self.uow.place_member_repository.delete(target)
-        await self._publish_event(
+        await self.broker.publish(
             MemberRemoved(place_id=place_id, user_id=target_user_id),
-            key=f"{place_id}:{target_user_id}",
+            topic=TOPIC_MEMBER_REMOVED,
+            key=f"{place_id}:{target_user_id}".encode(),
         )
         return True
 
@@ -147,9 +147,10 @@ class PlacesService:
         if target.role == PlaceRole.OWNER:
             raise PermissionDeniedError("Cannot change the owner's role")
         await self.uow.place_member_repository.update(target.id, role=role)
-        await self._publish_event(
+        await self.broker.publish(
             MemberRoleChanged(place_id=place_id, user_id=target_user_id, role=role.value),  # type: ignore[arg-type]
-            key=f"{place_id}:{target_user_id}",
+            topic=TOPIC_MEMBER_ROLE_CHANGED,
+            key=f"{place_id}:{target_user_id}".encode(),
         )
         return True
 

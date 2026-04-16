@@ -63,16 +63,13 @@ Services return DTOs from `core/dto.py`, not ORM models.
 
 ## Kafka Events (Producer)
 
-Topic: `places.events`. All events use Pydantic models from `placebrain_contracts.events`.
+One topic per event type. Publishing directly via `self.broker.publish()` with Pydantic models — FastStream auto-serializes. Topic constants from `placebrain_contracts.events.topics`.
 
-| Action | Event Model | Consumers |
-|--------|-------------|-----------|
-| Create place (auto-add owner) | `MemberAdded` | devices |
-| Add member | `MemberAdded` | devices |
-| Remove member | `MemberRemoved` | devices |
-| Change member role | `MemberRoleChanged` | devices |
-| Delete place | `PlaceDeleted` | devices |
-
-Publishing via `PlacesService._publish_event(event: BaseEvent, key: str)`.
+| Topic | Event Model | Consumers |
+|-------|-------------|-----------|
+| `places.member.added` | `MemberAdded` | devices |
+| `places.member.removed` | `MemberRemoved` | devices |
+| `places.member.role-changed` | `MemberRoleChanged` | devices |
+| `places.place.deleted` | `PlaceDeleted` | devices |
 
 **StrEnum → Literal:** `PlaceRole.value` returns `str`, but event models expect `Literal[...]`. Use `# type: ignore[arg-type]` on these lines — values are guaranteed to match.
